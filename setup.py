@@ -43,22 +43,37 @@ def get_shell_rc_file() -> Path:
         raise OSError(f"Unsupported operating system: {system}")
 
 
-def append_to_file(file_path: Path, line: str) -> bool:
+def append_to_file(file_path: Path, line: str, var_name: str = None) -> bool:
     try:
         file_path.touch(exist_ok=True)
         
         with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+            lines = f.readlines()
         
-        if line not in content:
-            has_header = "# Unbound Cursor Configuration" in content
+        # Remove existing export for this variable if var_name is provided
+        if var_name:
+            export_prefix = f"export {var_name}="
+            lines = [l for l in lines if not l.strip().startswith(export_prefix)]
+        
+        # Check if line already exists
+        if line + "\n" not in lines and line not in [l.rstrip() for l in lines]:
+            has_header = any("# Unbound Cursor Configuration" in l for l in lines)
             
-            with open(file_path, "a", encoding="utf-8") as f:
-                if not has_header:
-                    f.write(f"\n# Unbound Cursor Configuration\n")
-                f.write(f"{line}\n")
+            if not has_header:
+                lines.append("\n# Unbound Cursor Configuration\n")
+            lines.append(f"{line}\n")
+            
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
             return True
-        return False
+        
+        # If we removed an old export and need to add new one
+        if var_name:
+            with open(file_path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
+            return True
+            
+        return True
     except Exception as e:
         print(f"❌ Failed to modify {file_path}: {e}")
         return False
@@ -79,7 +94,7 @@ def set_env_var_unix(var_name: str, value: str) -> bool:
         return False
     
     export_line = f'export {var_name}="{value}"'
-    return append_to_file(rc_file, export_line)
+    return append_to_file(rc_file, export_line, var_name)
 
 
 def set_env_var(var_name: str, value: str) -> Tuple[bool, str]:
@@ -238,7 +253,7 @@ def main():
         print(f"❌ Failed to set environment variable: {message}")
         return
     
-    print(f"✅ Environment variable set ({message})")
+    print(f"✅ Environment variable set")
     
     if not setup_hooks():
         print("\n❌ Failed to setup hooks")
@@ -248,6 +263,8 @@ def main():
     print("Setup Complete!")
     print("=" * 60)
     print("Restart Cursor")
+    print("=" * 60)
+    print("\n\n")
 
 
 if __name__ == "__main__":
