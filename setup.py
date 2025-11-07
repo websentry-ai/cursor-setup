@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import sys
 import platform
 import subprocess
 import urllib.request
@@ -12,9 +13,20 @@ import http.server
 import socketserver
 import socket
 
-AUTH_URL = "https://gateway.getunbound.ai"
 HOOKS_URL = "https://raw.githubusercontent.com/websentry-ai/cursor-setup/refs/heads/main/hooks.json"
 SCRIPT_URL = "https://raw.githubusercontent.com/websentry-ai/cursor-setup/refs/heads/main/unbound.py"
+
+
+def normalize_url(domain: str) -> str:
+    """Normalize domain to proper URL format."""
+    domain = domain.strip()
+    
+    if domain.startswith("http://") or domain.startswith("https://"):
+        url = domain
+    else:
+        url = f"https://{domain}"
+    
+    return url.rstrip('/')
 
 
 def get_shell_rc_file() -> Path:
@@ -191,7 +203,20 @@ def main():
     print("Unbound Cursor Hooks - Setup")
     print("=" * 60)
     
-    cb_response = run_callback_server(AUTH_URL)
+    domain = None
+    for i, arg in enumerate(sys.argv):
+        if arg == "--domain" and i + 1 < len(sys.argv):
+            domain = sys.argv[i + 1]
+            break
+    
+    if not domain:
+        print("\n❌ Missing required argument: --domain")
+        print("Usage: python3 setup.py --domain gateway.getunbound.ai")
+        return
+    
+    auth_url = normalize_url(domain)
+    
+    cb_response = run_callback_server(auth_url)
     if cb_response is None:
         print("\n❌ Failed to receive callback. Exiting.")
         return
