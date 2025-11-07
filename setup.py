@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+
+import os
+import platform
+import subprocess
+import urllib.request
+import urllib.parse
+from pathlib import Path
+from typing import Tuple, Optional, Dict
+import threading
+import http.server
+import socketserver
+import socket
+
+AUTH_URL = "https://gateway.getunbound.ai"
+HOOKS_URL = "https://raw.githubusercontent.com/websentry-ai/cursor-setup/main/hooks.json"
+SCRIPT_URL = "https://raw.githubusercontent.com/websentry-ai/cursor-setup/main/unbound.py"
+
+
+def get_shell_rc_file() -> Path:
+    system = platform.system().lower()
+    shell = os.environ.get("SHELL", "").lower()
+    
+    if system == "darwin":
+        return Path.home() / ".zprofile" if "zsh" in shell else Path.home() / ".bash_profile"
+    elif system == "linux":
+        return Path.home() / ".zshrc" if "zsh" in shell else Path.home() / ".bashrc"
+    elif system == "windows":
+        return None
+    else:
+        raise OSError(f"Unsupported operating system: {system}")
+
+
+def append_to_file(file_path: Path, line: str) -> bool:
+    try:
+        file_path.touch(exist_ok=True)
+        
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        
+        if line not in content:
+            has_header = "# Unbound Cursor Configuration" in content
+            
+            with open(file_path, "a", encoding="utf-8") as f:
+                if not has_header:
+                    f.write(f"\n# Unbound Cursor Configuration\n")
+                f.write(f"{line}\n")
+            return True
+        return False
+    except Exception as e:
+        print(f"❌ Failed to modify {file_path}: {e}")
+        return False
+
+
+def set_env_var_windows(var_name: str, value: str) -> bool:
+    try:
+        subprocess.run(["setx", var_name, value], check=True, capture_output=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"❌ Failed to set {var_name} on Windows: {e}")
+        return False
+
+
+def set_env_var_unix(var_name: str, value: str) -> bool:
+    rc_file = get_shell_rc_file()
+    if rc_file is None:
+        return False
+    
+    export_line = f'export {var_name}="{value}"'
+    return append_to_file(rc_file, export_line)
+
+
+def set_env_var(var_name: str, value: str) -> Tuple[bool, str]:
+    system = platform.system().lower()
+    
+    if system == "windows":
+        success = set_env_var_windows(var_name, value)
+        return (True, "Set for new terminals") if success else (False, "Failed")
+    elif system in ["darwin", "linux"]:
+        success = set_env_var_unix(var_name, value)
+        if success:
+            shell_name = "zsh" if "zsh" in os.environ.get("SHELL", "") else "bash"
+            return True, f"Run 'source ~/.{shell_name}rc' or restart terminal"
+        return False, "Failed"
+    else:
+        return False, f"Unsupported OS: {system}"
+
+
+def run_callback_server(frontend_url: str) -> Optional[Dict[str, any]]:
+    result: Dict[str, any] = {"method": None, "path": None, "query": None, "headers": None, "body": None}
+    done_evt = threading.Event()
+
+    class CallbackHandler(http.server.BaseHTTPRequestHandler):
+        def _finish(self, code: int = 200, message: bytes = b"Logged in successfully! You can close this tab.") -> None:
+            try:
+                self.send_response(code)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(message)))
+                self.end_headers()
+                self.wfile.write(message)
+            except Exception:
+                pass
+
+        def do_GET(self) -> None:
+            parsed = urllib.parse.urlparse(self.path)
+            result["method"] = "GET"
+            result["path"] = self.path
+            result["query"] = dict(urllib.parse.parse_qsl(parsed.query))
+            result["headers"] = {k: v for k, v in self.headers.items()}
+            result["body"] = None
+            self._finish()
+            done_evt.set()
+
+        def log_message(self, format: str, *args) -> None:
+            return
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 0))
+            host, port = s.getsockname()
+        callback_url = f"http://127.0.0.1:{port}/callback"
+
+        httpd = socketserver.TCPServer(("127.0.0.1", port), CallbackHandler)
+        httpd.allow_reuse_address = True
+
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+
+        encoded_callback = urllib.parse.quote(callback_url, safe="")
+        target_url = f"{frontend_url.rstrip('/')}/automations/api-key-callback?callback_url={encoded_callback}&app_type=cursor"
+        print("\n" + "─" * 60)
+        print("🔗 Click the following URL:")
+        print(target_url)
+        print("Waiting for authentication...")
+
+        try:
+            done_evt.wait()
+        finally:
+            try:
+                httpd.shutdown()
+                httpd.server_close()
+            except Exception:
+                pass
+
+        return result
+    except Exception as e:
+        print(f"❌ Failed to run callback server: {e}")
+        return None
+
+
+def download_file(url: str, dest_path: Path) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=30) as response:
+            if response.status == 200:
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                dest_path.write_bytes(response.read())
+                return True
+        return False
+    except Exception as e:
+        print(f"❌ Failed to download {url}: {e}")
+        return False
+
+
+def setup_hooks():
+    hooks_dir = Path.home() / ".cursor" / "hooks"
+    hooks_json = Path.home() / ".cursor" / "hooks.json"
+    script_path = hooks_dir / "unbound.py"
+    
+    print("\n📥 Downloading hooks configuration...")
+    if not download_file(HOOKS_URL, hooks_json):
+        return False
+    print("✅ hooks.json downloaded")
+    
+    print("📥 Downloading unbound.py script...")
+    if not download_file(SCRIPT_URL, script_path):
+        return False
+    print("✅ unbound.py downloaded")
+    
+    try:
+        current_mode = script_path.stat().st_mode
+        os.chmod(script_path, current_mode | 0o111)
+        print("✅ Made unbound.py executable")
+    except Exception as e:
+        print(f"⚠️  Could not make script executable: {e}")
+    
+    return True
+
+
+def main():
+    print("=" * 60)
+    print("Unbound Cursor Hooks - Setup")
+    print("=" * 60)
+    
+    cb_response = run_callback_server(AUTH_URL)
+    if cb_response is None:
+        print("\n❌ Failed to receive callback. Exiting.")
+        return
+    
+    api_key = None
+    try:
+        api_key = (cb_response.get("query") or {}).get("api_key")
+    except Exception:
+        pass
+    
+    if not api_key:
+        print("\n❌ No API key received. Exiting.")
+        return
+    
+    print("✅ API key received")
+    
+    success, message = set_env_var("UNBOUND_CURSOR_API_KEY", api_key)
+    if not success:
+        print(f"❌ Failed to set environment variable: {message}")
+        return
+    
+    print(f"✅ Environment variable set ({message})")
+    
+    if not setup_hooks():
+        print("\n❌ Failed to setup hooks")
+        return
+    
+    print("\n" + "=" * 60)
+    print("Setup Complete!")
+    print("=" * 60)
+    print("Restart Cursor")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Setup cancelled.")
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        exit(1)
