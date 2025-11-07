@@ -264,7 +264,7 @@ def main():
     print("=" * 60)
     print("Restart Cursor")
     print("=" * 60)
-    print("\n\n")
+    print("\n")
 
 
 if __name__ == "__main__":
