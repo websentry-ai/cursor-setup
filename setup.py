@@ -13,8 +13,8 @@ import socketserver
 import socket
 
 AUTH_URL = "https://gateway.getunbound.ai"
-HOOKS_URL = "https://raw.githubusercontent.com/websentry-ai/cursor-setup/main/hooks.json"
-SCRIPT_URL = "https://raw.githubusercontent.com/websentry-ai/cursor-setup/main/unbound.py"
+HOOKS_URL = "https://raw.githubusercontent.com/websentry-ai/cursor-setup/refs/heads/main/hooks.json"
+SCRIPT_URL = "https://raw.githubusercontent.com/websentry-ai/cursor-setup/refs/heads/main/unbound.py"
 
 
 def get_shell_rc_file() -> Path:
