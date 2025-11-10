@@ -6,6 +6,7 @@ import platform
 import subprocess
 import urllib.request
 import urllib.parse
+import time
 from pathlib import Path
 from typing import Tuple, Optional, Dict
 import threading
@@ -213,6 +214,52 @@ def setup_hooks():
     return True
 
 
+def restart_cursor() -> bool:
+    """Attempt to restart Cursor IDE."""
+    system = platform.system().lower()
+
+    try:
+        if system == "darwin":
+            # macOS: Gracefully quit using AppleScript, then relaunch
+            print("\n🔄 Restarting Cursor IDE...")
+            subprocess.run(["osascript", "-e", 'tell application "Cursor" to quit'], 
+                         capture_output=True)
+            time.sleep(2)
+            subprocess.run(["open", "-a", "Cursor"])
+            print("✅ Cursor restarted")
+            return True
+
+        elif system == "linux":
+            # Linux: Kill and relaunch cursor
+            print("\n🔄 Restarting Cursor IDE...")
+            subprocess.run(["pkill", "-9", "cursor"], capture_output=True)
+            time.sleep(1)
+            subprocess.Popen(["cursor"],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            print("✅ Cursor restarted")
+            return True
+
+        elif system == "windows":
+            # Windows: Use taskkill and start
+            print("\n🔄 Restarting Cursor IDE...")
+            subprocess.run(["taskkill", "/F", "/IM", "Cursor.exe"],
+                         capture_output=True)
+            time.sleep(1)
+            subprocess.Popen(["start", "cursor"],
+                           shell=True,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+            print("✅ Cursor restarted")
+            return True
+
+        return False
+
+    except Exception:
+        print("Restart Cursor")
+        return False
+
+
 def main():
     print("=" * 60)
     print("Unbound Cursor Hooks - Setup")
@@ -262,7 +309,9 @@ def main():
     print("\n" + "=" * 60)
     print("Setup Complete!")
     print("=" * 60)
-    print("Restart Cursor")
+    
+    restart_cursor()
+
     print("=" * 60)
     print("\n")
 

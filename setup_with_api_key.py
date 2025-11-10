@@ -5,7 +5,7 @@ import sys
 import platform
 import urllib.request
 import subprocess
-import signal
+import time
 from pathlib import Path
 from typing import Tuple
 
@@ -142,12 +142,12 @@ def restart_cursor() -> bool:
 
     try:
         if system == "darwin":
-            # macOS: Kill and relaunch Cursor
+            # macOS: Gracefully quit using AppleScript, then relaunch
             print("\n🔄 Restarting Cursor IDE...")
-            subprocess.run(["pkill", "-9", "Cursor"], capture_output=True)
-            subprocess.Popen(["open", "-a", "Cursor"],
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
+            subprocess.run(["osascript", "-e", 'tell application "Cursor" to quit'], 
+                         capture_output=True)
+            time.sleep(2)
+            subprocess.run(["open", "-a", "Cursor"])
             print("✅ Cursor restarted")
             return True
 
@@ -155,6 +155,7 @@ def restart_cursor() -> bool:
             # Linux: Kill and relaunch cursor
             print("\n🔄 Restarting Cursor IDE...")
             subprocess.run(["pkill", "-9", "cursor"], capture_output=True)
+            time.sleep(1)
             subprocess.Popen(["cursor"],
                            stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
@@ -166,6 +167,7 @@ def restart_cursor() -> bool:
             print("\n🔄 Restarting Cursor IDE...")
             subprocess.run(["taskkill", "/F", "/IM", "Cursor.exe"],
                          capture_output=True)
+            time.sleep(1)
             subprocess.Popen(["start", "cursor"],
                            shell=True,
                            stdout=subprocess.DEVNULL,
