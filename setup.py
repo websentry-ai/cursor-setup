@@ -7,6 +7,7 @@ import subprocess
 import urllib.request
 import urllib.parse
 import time
+import webbrowser
 from pathlib import Path
 from typing import Tuple, Optional, Dict
 import threading
@@ -157,7 +158,9 @@ def run_callback_server(frontend_url: str) -> Optional[Dict[str, any]]:
         encoded_callback = urllib.parse.quote(callback_url, safe="")
         target_url = f"{frontend_url.rstrip('/')}/automations/api-key-callback?callback_url={encoded_callback}&app_type=cursor"
         print("\n" + "─" * 60)
-        print("🔗 Click the following URL:")
+        webbrowser.open(target_url)
+        print("🌐 Opening browser...")
+        print("If browser doesn't open automatically, open this link:")
         print(target_url)
         print("Waiting for authentication...")
 
