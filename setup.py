@@ -225,40 +225,65 @@ def restart_cursor() -> bool:
         if system == "darwin":
             # macOS: Gracefully quit using AppleScript, then relaunch
             print("\n🔄 Restarting Cursor IDE...")
-            subprocess.run(["osascript", "-e", 'tell application "Cursor" to quit'], 
-                         capture_output=True)
+            result = subprocess.run(["osascript", "-e", 'tell application "Cursor" to quit'], 
+                                  capture_output=True, timeout=5)
+            if result.returncode != 0:
+                # Fallback to killall if osascript fails
+                subprocess.run(["killall", "Cursor"], capture_output=True, timeout=5)
             time.sleep(2)
-            subprocess.run(["open", "-a", "Cursor"])
-            print("✅ Cursor restarted")
-            return True
+            # Launch Cursor and check if it succeeds
+            result = subprocess.run(["open", "-a", "Cursor"],
+                                  capture_output=True, timeout=5)
+            if result.returncode == 0:
+                print("✅ Cursor restarted")
+                return True
+            else:
+                print("Restart Cursor")
+                return False
 
         elif system == "linux":
             # Linux: Kill and relaunch cursor
             print("\n🔄 Restarting Cursor IDE...")
-            subprocess.run(["pkill", "-9", "cursor"], capture_output=True)
+            subprocess.run(["pkill", "-9", "cursor"], capture_output=True, timeout=5)
             time.sleep(1)
-            subprocess.Popen(["cursor"],
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
-            print("✅ Cursor restarted")
-            return True
+            proc = subprocess.Popen(["cursor"],
+                                  stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+            # Give it a moment to start
+            time.sleep(0.5)
+            # If process is still running (poll returns None) or started successfully, it's good
+            if proc.poll() is None:
+                print("✅ Cursor restarted")
+                return True
+            else:
+                print("Restart Cursor")
+                return False
 
         elif system == "windows":
             # Windows: Use taskkill and start
             print("\n🔄 Restarting Cursor IDE...")
             subprocess.run(["taskkill", "/F", "/IM", "Cursor.exe"],
-                         capture_output=True)
+                         capture_output=True, timeout=5)
             time.sleep(1)
-            subprocess.Popen(["start", "cursor"],
-                           shell=True,
-                           stdout=subprocess.DEVNULL,
-                           stderr=subprocess.DEVNULL)
-            print("✅ Cursor restarted")
-            return True
+            proc = subprocess.Popen(["start", "cursor"],
+                                  shell=True,
+                                  stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+            # Give it a moment to start
+            time.sleep(0.5)
+            # start command returns immediately, so check if process started
+            if proc.poll() is None or proc.returncode == 0:
+                print("✅ Cursor restarted")
+                return True
+            else:
+                print("Restart Cursor")
+                return False
 
         return False
 
-    except Exception:
+    except subprocess.TimeoutExpired:
+        return False
+    except Exception as e:
         print("Restart Cursor")
         return False
 
